@@ -8,7 +8,7 @@ import { response, CookieOptions } from "express";
 import http from "http";
 import merge from "utils-merge";
 import cookie from "cookie";
-import { sign } from 'cookie-signature';
+import { sign } from "cookie-signature";
 
 export class ServerResponse extends http.OutgoingMessage {
   private _headers: { [name: string]: string | string[] } = {};
@@ -24,36 +24,51 @@ export class ServerResponse extends http.OutgoingMessage {
 
   public writableEnded = false;
 
-  constructor(
-    private req: any,
-    private app: any,
-  ) {
+  constructor(private req: any, private app: any) {
     super();
     EventEmitter.call(this);
     // http.OutgoingMessage.call(this);
   }
 
-  render(view: string, options?: any, callback?: (err: Error, html: string) => void): void
+  render(
+    view: string,
+    options?: any,
+    callback?: (err: Error, html: string) => void
+  ): void;
   render(view: string, callback?: (err: Error, html: string) => void): void {
     response.render.apply(this, arguments);
   }
 
   // @ts-ignore
   end(chunk?: string, encoding?: BufferEncoding) {
-    if (this.finished) { return; }
+    if (this.finished) {
+      return;
+    }
 
     this._writes.push(chunk);
 
-    this._body = (encoding)
+    // Get the total length of all arrays.
+    let length = 0;
+    this._writes.filter(Boolean).forEach((item) => {
+      length += item.length;
+    });
+
+    // Create a new array with total length and merge all source arrays.
+    let mergedArray = new Uint8Array(length);
+    let offset = 0;
+    this._writes.filter(Boolean).forEach((item) => {
+      mergedArray.set(item, offset);
+      offset += item.length;
+    });
+
+    this._body = encoding
       ? Buffer.from(chunk, encoding).toString()
-      : this._writes.join("");
+      : mergedArray;
 
     if (!this.writableEnded) {
       // // write status + headers
-
       // // dequeue writes
       // this._writes.forEach((chunk) => this.res.write(chunk));
-
       // // write response
       // this.res.cork(() => {
       //   this.res.end(body);
@@ -63,7 +78,7 @@ export class ServerResponse extends http.OutgoingMessage {
     // this.writableEnded = true;
 
     this.finished = true;
-    this.emit('finish');
+    this.emit("finish");
 
     return this;
   }
@@ -73,7 +88,7 @@ export class ServerResponse extends http.OutgoingMessage {
   }
 
   hasHeader(name: string) {
-    return (this._headers[name.toLowerCase()] !== undefined);
+    return this._headers[name.toLowerCase()] !== undefined;
   }
 
   getHeader(name: string) {
@@ -99,18 +114,17 @@ export class ServerResponse extends http.OutgoingMessage {
     return this;
   }
 
-  vary (field: string) {
+  vary(field: string) {
     let append = "";
 
-    if (!this._headers['vary']) {
-      this._headers['vary'] = "";
+    if (!this._headers["vary"]) {
+      this._headers["vary"] = "";
       append = field;
-
     } else {
       append = `, ${field}`;
     }
 
-    this._headers['vary'] += append;
+    this._headers["vary"] += append;
   }
 
   sendFile(path: string, fn?: (err: Error) => void): void {
@@ -124,19 +138,19 @@ export class ServerResponse extends http.OutgoingMessage {
   send(chunk?: any) {
     switch (typeof chunk) {
       // string defaulting to html
-      case 'string':
-        if (!this.get('Content-Type')) {
-          this.type('html');
+      case "string":
+        if (!this.get("Content-Type")) {
+          this.type("html");
         }
         break;
-      case 'boolean':
-      case 'number':
-      case 'object':
+      case "boolean":
+      case "number":
+      case "object":
         if (chunk === null) {
-          chunk = '';
+          chunk = "";
         } else if (Buffer.isBuffer(chunk)) {
-          if (!this.get('Content-Type')) {
-            this.type('bin');
+          if (!this.get("Content-Type")) {
+            this.type("bin");
           }
         } else {
           return this.json(chunk);
@@ -149,21 +163,25 @@ export class ServerResponse extends http.OutgoingMessage {
 
   // enqueue to write during .end()
   write(chunk: any) {
-    this._writes.push(chunk);
+    if (typeof chunk === "string") {
+      this._writes.push(Buffer.from(chunk));
+    } else {
+      this._writes.push(chunk);
+    }
     return !this.writableEnded;
   }
 
   type(type: string) {
-    this.set('Content-Type', mime.getType(type) || type);
+    this.set("Content-Type", mime.getType(type) || type);
     return this;
   }
 
   json(body: any) {
-    this.type('json').end(JSON.stringify(body));
+    this.type("json").end(JSON.stringify(body));
   }
 
   jsonp(body: any) {
-    this.set('Content-Type', "application/javascript");
+    this.set("Content-Type", "application/javascript");
     this.end(`callback(${JSON.stringify(body)})`);
   }
 
@@ -172,8 +190,8 @@ export class ServerResponse extends http.OutgoingMessage {
     return response.location.apply(this, arguments);
   }
 
-  redirect(path: string)
-  redirect(code: number, path: string)
+  redirect(path: string);
+  redirect(code: number, path: string);
   redirect(codeOrPath: number | string, path?: string) {
     return response.redirect.apply(this, arguments);
   }
@@ -183,16 +201,15 @@ export class ServerResponse extends http.OutgoingMessage {
   }
 
   set(nameOrDict: string | object, value?: string | string[]) {
-    if (typeof(nameOrDict) === "string") {
+    if (typeof nameOrDict === "string") {
       nameOrDict = nameOrDict.toLowerCase();
-      if (nameOrDict !== 'content-length') {
+      if (nameOrDict !== "content-length") {
         this._headers[nameOrDict] = value;
       }
-
     } else {
       for (let originalName in nameOrDict) {
         const name = originalName.toLowerCase();
-        if (name !== 'content-length') {
+        if (name !== "content-length") {
           this._headers[name] = nameOrDict[originalName];
         }
       }
@@ -206,11 +223,11 @@ export class ServerResponse extends http.OutgoingMessage {
 
     if (prev) {
       // concat the new and prev vals
-      value = (Array.isArray(prev))
+      value = Array.isArray(prev)
         ? prev.concat(val)
-        : (Array.isArray(val))
-          ? [prev].concat(val)
-          : [prev, val];
+        : Array.isArray(val)
+        ? [prev].concat(val)
+        : [prev, val];
     }
 
     return this.set(name, value);
@@ -221,9 +238,12 @@ export class ServerResponse extends http.OutgoingMessage {
     return this.set(name, value);
   }
 
-  writeHead(code: number, headers: { [name: string]: string | string[] } = this._headers) {
+  writeHead(
+    code: number,
+    headers: { [name: string]: string | string[] } = this._headers
+  ) {
     if (this.headersSent) {
-      console.warn("writeHead: headers were already sent.")
+      console.warn("writeHead: headers were already sent.");
       return;
     }
 
@@ -249,7 +269,11 @@ export class ServerResponse extends http.OutgoingMessage {
     this.headersSent = true;
   }
 
-  cookie(name: string, value: string | Record<string, unknown>, options: CookieOptions) {
+  cookie(
+    name: string,
+    value: string | Record<string, unknown>,
+    options: CookieOptions
+  ) {
     const opts = merge({}, options) as CookieOptions;
     const secret = this.req.secret || null;
     const signed = opts.signed || false;
@@ -258,33 +282,32 @@ export class ServerResponse extends http.OutgoingMessage {
       throw new Error('cookieParser("secret") required for signed cookies');
     }
 
-    let val = typeof value === 'object'
-      ? 'j:' + JSON.stringify(value)
-      : String(value);
+    let val =
+      typeof value === "object" ? "j:" + JSON.stringify(value) : String(value);
 
     if (signed) {
-      val = 's:' + sign(val, secret);
+      val = "s:" + sign(val, secret);
     }
 
-    if ('maxAge' in opts) {
+    if ("maxAge" in opts) {
       opts.expires = new Date(Date.now() + opts.maxAge);
       opts.maxAge /= 1000;
     }
 
     if (opts.path == null) {
-      opts.path = '/';
+      opts.path = "/";
     }
 
-    return this.append('set-cookie', cookie.serialize(name, String(val), opts));
+    return this.append("set-cookie", cookie.serialize(name, String(val), opts));
   }
 
   clearCookie(name: string, options: Record<string, string | number>) {
-    const opts = merge({ expires: new Date(1), path: '/' }, options);
-    return this.cookie(name, '', opts);
+    const opts = merge({ expires: new Date(1), path: "/" }, options);
+    return this.cookie(name, "", opts);
   }
 
   // express-session [??]
-  private _implicitHeader () {
+  private _implicitHeader() {
     // const code = StatusCodes.OK;
     // const reason = ReasonPhrases[StatusCodes[code]];
     // this.res.cork(() => {
@@ -295,7 +318,7 @@ export class ServerResponse extends http.OutgoingMessage {
   protected async getBunResponse() {
     if (!this.finished) {
       await new Promise((resolve, reject) => {
-        this.on('finish', resolve);
+        this.on("finish", resolve);
 
         // TODO: add rejection timeout...
       });
@@ -307,7 +330,7 @@ export class ServerResponse extends http.OutgoingMessage {
     // compute headers
     const headers: { [name: string]: string } = {};
     for (const name in this._headers) {
-      headers[name] = (Array.isArray(this._headers[name]))
+      headers[name] = Array.isArray(this._headers[name])
         ? (this._headers[name] as string[]).join(", ")
         : this._headers[name].toString();
     }
@@ -318,5 +341,4 @@ export class ServerResponse extends http.OutgoingMessage {
       headers,
     });
   }
-
 }
